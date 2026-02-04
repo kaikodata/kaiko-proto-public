@@ -1,0 +1,12 @@
+# Java code generation configuration
+# Usage: buf generate --template buf/buf.gen.java.yaml
+version: v2
+managed:
+  enabled: true
+plugins:
+  # Protocol Buffers for Java
+  - remote: buf.build/protocolbuffers/java
+    out: gen/java
+  # gRPC for Java
+  - remote: buf.build/grpc/java
+    out: gen/java

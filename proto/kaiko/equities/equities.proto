@@ -1,0 +1,166 @@
+syntax = "proto3";
+
+package kaiko.equities;
+
+import "google/protobuf/timestamp.proto";
+
+// Language-specific options for code generation.
+option go_package = "kaiko.equities";
+option java_package = "com.kaiko.equities";
+option java_outer_classname = "EquitiesProto";
+option java_multiple_files = true;
+option csharp_namespace = "Kaiko.Equities";
+option php_namespace = "Kaiko\\Equities";
+option ruby_package = "Kaiko::Equities";
+
+// EquitiesService provides streaming access to index equities data.
+service EquitiesService {
+  // StreamIndex returns a real-time stream of Index messages filtered by request.
+  rpc StreamIndex(StreamIndexRequest) returns (stream IndexResponse) {}
+  // ReplayIndex returns a stream of historical Index messages within a time range.
+  rpc ReplayIndex(ReplayIndexRequest) returns (stream IndexResponse) {}
+}
+
+// IndexCommodity specifies the type of index update to receive.
+enum IndexCommodity {
+  // Unknown commodity (default value).
+  INDEX_COMMODITY_UNKNOWN = 0;
+  // Real-time index updates.
+  INDEX_COMMODITY_REAL_TIME = 1;
+  // Daily fixing index updates.
+  INDEX_COMMODITY_DAILY_FIXING = 2;
+}
+
+// StreamIndexRequest is the request message for streaming live index data.
+message StreamIndexRequest {
+  // Index codes to filter by (e.g., ["KAIKO_US_TECH_100"]).
+  repeated string index_codes = 1;
+  // Commodities to receive (real-time, daily fixing, or both).
+  // If empty, all commodities are returned.
+  repeated IndexCommodity commodities = 2;
+}
+
+// ReplayIndexRequest is the request message for replaying historical index data.
+message ReplayIndexRequest {
+  // Index codes to filter by (e.g., ["KAIKO_US_TECH_100"]).
+  repeated string index_codes = 1;
+  // Commodities to receive (real-time, daily fixing, or both).
+  // If empty, all commodities are returned.
+  repeated IndexCommodity commodities = 2;
+  // Start time for the replay (inclusive). Will be bounded to max replay interval from now.
+  google.protobuf.Timestamp start_time = 3;
+  // End time for the replay (exclusive). Will be bounded to current time.
+  google.protobuf.Timestamp end_time = 4;
+}
+
+// IndexResponse is the response message containing index equities data.
+message IndexResponse {
+  // Index data.
+  Index index = 1;
+  // Session detection method used for this index.
+  IndexSessionDetector session_detector = 2;
+}
+
+// IndexSessionDetector represents the session detection method for index equities.
+enum IndexSessionDetector {
+  // Unknown session detection method.
+  INDEX_SESSION_DETECTOR_UNKNOWN = 0;
+  // Early hours session detection.
+  INDEX_SESSION_DETECTOR_EARLY_HOURS = 1;
+  // Regular hours session detection.
+  INDEX_SESSION_DETECTOR_REGULAR_HOURS = 2;
+  // Late hours session detection.
+  INDEX_SESSION_DETECTOR_LATE_HOURS = 3;
+  // Overnight session detection.
+  INDEX_SESSION_DETECTOR_OVERNIGHT = 4;
+  // Closed session detection.
+  INDEX_SESSION_DETECTOR_CLOSED = 5;
+}
+
+// Index contains the computed index data.
+message Index {
+  // Index code identifier.
+  string index_code = 1;
+  // Event type (real-time or daily fixing).
+  IndexCommodity commodity = 2;
+  // Data interval for this index computation.
+  IndexDataInterval interval = 3;
+  // Quote currency.
+  string quote = 4;
+  // Base assets included in the index.
+  repeated IndexBaseAsset bases = 5;
+  // Exchanges used for index computation.
+  repeated string exchanges = 6;
+  // Detailed computation results by percentage.
+  repeated IndexPercentage percentages = 7;
+  // Event generation timestamp (after normalization by Kaiko).
+  google.protobuf.Timestamp ts_event = 8;
+  // Sequence ID for event ordering. Sortable in lexicographic order.
+  string sequence_id = 9;
+  // Last internal ingest date used for computation. Useful for replication purposes.
+  google.protobuf.Timestamp last_ingest_time = 10;
+  // Last internal anomaly detection ingest date. Useful for replication purposes.
+  optional google.protobuf.Timestamp last_anomaly_ingest_time = 11;
+}
+
+// IndexDataInterval represents the time interval for an index computation.
+message IndexDataInterval {
+  // Starting time (inclusive).
+  google.protobuf.Timestamp start_time = 1;
+  // Ending time (exclusive).
+  google.protobuf.Timestamp end_time = 2;
+}
+
+// IndexBaseAsset represents a base asset involved in the index computation.
+message IndexBaseAsset {
+  // Asset identifier.
+  string asset = 1;
+  // Weight of this asset in the index.
+  double weight = 2;
+}
+
+// IndexPercentage contains computation results for a specific percentage tier.
+message IndexPercentage {
+  // Percentage tier value.
+  double percentage = 1;
+  // Computed price for this percentage tier.
+  double price = 2;
+  // Detailed computation results by trading pairs.
+  repeated IndexPairs pairs = 3;
+}
+
+// IndexPairs contains computation results for a specific trading pair.
+message IndexPairs {
+  // Trading pair identifier.
+  string pair = 1;
+  // Weight of this pair (for multi-asset indices).
+  double weight = 2;
+  // Detailed computation results by instruments.
+  repeated IndexInstruments instruments = 3;
+}
+
+// IndexInstruments contains computation results for a specific instrument.
+message IndexInstruments {
+  // Partition identifier.
+  string partition = 1;
+  // Computed price.
+  double price = 2;
+  // Trading volume.
+  double volume = 3;
+  // Number of trades.
+  uint64 count = 4;
+  // Underlying trade information for this partition.
+  IndexUnderlyingTrade underlying_trade = 5;
+}
+
+// IndexUnderlyingTrade contains information about the underlying trade.
+message IndexUnderlyingTrade {
+  // Amount/quantity of asset bought or sold (in base currency).
+  double volume = 1;
+  // Exchange code (e.g., "cbse" for Coinbase).
+  string exchange = 2;
+  // Trade ID (empty string when not present).
+  string id = 3;
+  // Trade timestamp.
+  google.protobuf.Timestamp datetime = 4;
+}
