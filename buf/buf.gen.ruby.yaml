@@ -1,0 +1,12 @@
+# Ruby code generation configuration
+# Usage: buf generate --template buf/buf.gen.ruby.yaml
+version: v2
+managed:
+  enabled: true
+plugins:
+  # Protocol Buffers for Ruby
+  - remote: buf.build/protocolbuffers/ruby
+    out: gen/ruby
+  # gRPC for Ruby
+  - remote: buf.build/grpc/ruby
+    out: gen/ruby

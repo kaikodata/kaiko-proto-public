@@ -1,0 +1,14 @@
+# TypeScript/JavaScript code generation configuration
+# Usage: buf generate --template buf/buf.gen.typescript.yaml
+version: v2
+managed:
+  enabled: true
+plugins:
+  # Connect for TypeScript (recommended for web/Node.js)
+  - remote: buf.build/connectrpc/es
+    out: gen/typescript
+    opt: target=ts
+  # Alternative: gRPC-Web for browser clients
+  # - remote: buf.build/grpc/web
+  #   out: gen/typescript
+  #   opt: import_style=typescript,mode=grpcweb
