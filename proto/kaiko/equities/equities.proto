@@ -13,25 +13,27 @@ option csharp_namespace = "Kaiko.Equities";
 option php_namespace = "Kaiko\\Equities";
 option ruby_package = "Kaiko::Equities";
 
-// EquitiesService provides streaming access to index equities data.
+// EquitiesService is a service for getting equities data.
 service EquitiesService {
-  // StreamIndex returns a real-time stream of Index messages filtered by request.
+  // StreamIndex returns a stream of Index messages filtered by request.
   rpc StreamIndex(StreamIndexRequest) returns (stream IndexResponse) {}
   // ReplayIndex returns a stream of historical Index messages within a time range.
   rpc ReplayIndex(ReplayIndexRequest) returns (stream IndexResponse) {}
+  // CorporateActions returns corporate actions filtered by ISIN and ex-date range.
+  rpc CorporateActions(CorporateActionsRequest) returns (CorporateActionsResponse) {}
 }
 
-// IndexCommodity specifies the type of index update to receive.
+// IndexCommodity allows selecting kind of index update wanted.
 enum IndexCommodity {
-  // Unknown commodity (default value).
+  // Unknown commodity.
   INDEX_COMMODITY_UNKNOWN = 0;
-  // Real-time index updates.
+  // REAL_TIME commodity.
   INDEX_COMMODITY_REAL_TIME = 1;
-  // Daily fixing index updates.
+  // DAILY_FIXING commodity.
   INDEX_COMMODITY_DAILY_FIXING = 2;
 }
 
-// StreamIndexRequest is the request message for streaming live index data.
+// StreamIndexRequest is the request for streaming index equities data.
 message StreamIndexRequest {
   // Index codes to filter by (e.g., ["KAIKO_US_TECH_100"]).
   repeated string index_codes = 1;
@@ -40,7 +42,7 @@ message StreamIndexRequest {
   repeated IndexCommodity commodities = 2;
 }
 
-// ReplayIndexRequest is the request message for replaying historical index data.
+// ReplayIndexRequest is the request for replaying historical index equities data.
 message ReplayIndexRequest {
   // Index codes to filter by (e.g., ["KAIKO_US_TECH_100"]).
   repeated string index_codes = 1;
@@ -53,11 +55,11 @@ message ReplayIndexRequest {
   google.protobuf.Timestamp end_time = 4;
 }
 
-// IndexResponse is the response message containing index equities data.
+// IndexEquitiesResponse is the response message containing index equities data.
 message IndexResponse {
   // Index data.
   Index index = 1;
-  // Session detection method used for this index.
+  // Session detection method.
   IndexSessionDetector session_detector = 2;
 }
 
@@ -77,33 +79,33 @@ enum IndexSessionDetector {
   INDEX_SESSION_DETECTOR_CLOSED = 5;
 }
 
-// Index contains the computed index data.
+// Index is the response message for index data.
 message Index {
-  // Index code identifier.
+  // Index code.
   string index_code = 1;
-  // Event type (real-time or daily fixing).
+  // Event type.
   IndexCommodity commodity = 2;
-  // Data interval for this index computation.
+  // Data interval.
   IndexDataInterval interval = 3;
-  // Quote currency.
+  // Quote.
   string quote = 4;
-  // Base assets included in the index.
+  // Bases.
   repeated IndexBaseAsset bases = 5;
-  // Exchanges used for index computation.
+  // Exchanges.
   repeated string exchanges = 6;
-  // Detailed computation results by percentage.
+  // Detailed computation by percentage.
   repeated IndexPercentage percentages = 7;
-  // Event generation timestamp (after normalization by Kaiko).
+  // Event generation timestamp (event created by Kaiko), after normalization.
   google.protobuf.Timestamp ts_event = 8;
-  // Sequence ID for event ordering. Sortable in lexicographic order.
+  // Sequence ID for event. Sortable in lexicographic order.
   string sequence_id = 9;
   // Last internal ingest date used for computation. Useful for replication purposes.
   google.protobuf.Timestamp last_ingest_time = 10;
-  // Last internal anomaly detection ingest date. Useful for replication purposes.
+  // Last internal anomaly detection ingest date used for computation. Useful for replication purposes.
   optional google.protobuf.Timestamp last_anomaly_ingest_time = 11;
 }
 
-// IndexDataInterval represents the time interval for an index computation.
+// IndexDataInterval represents the time interval for index data.
 message IndexDataInterval {
   // Starting time (inclusive).
   google.protobuf.Timestamp start_time = 1;
@@ -111,56 +113,136 @@ message IndexDataInterval {
   google.protobuf.Timestamp end_time = 2;
 }
 
-// IndexBaseAsset represents a base asset involved in the index computation.
+// IndexBaseAsset is base asset involved in computation.
 message IndexBaseAsset {
-  // Asset identifier.
+  // Asset.
   string asset = 1;
-  // Weight of this asset in the index.
+  // Weight.
   double weight = 2;
 }
 
-// IndexPercentage contains computation results for a specific percentage tier.
+// IndexPercentage is computation result by percentage.
 message IndexPercentage {
-  // Percentage tier value.
+  // Percentage.
   double percentage = 1;
-  // Computed price for this percentage tier.
+  // Price computed for the whole percentage.
   double price = 2;
-  // Detailed computation results by trading pairs.
+  // Detailed computation by pairs.
   repeated IndexPairs pairs = 3;
 }
 
-// IndexPairs contains computation results for a specific trading pair.
+// IndexPairs is computation result by pairs.
 message IndexPairs {
-  // Trading pair identifier.
+  // Pair.
   string pair = 1;
-  // Weight of this pair (for multi-asset indices).
+  // Weight (for multiple assets indices).
   double weight = 2;
-  // Detailed computation results by instruments.
+  // Detailed computation by instruments.
   repeated IndexInstruments instruments = 3;
 }
 
-// IndexInstruments contains computation results for a specific instrument.
+// IndexInstruments is computation result by instruments.
 message IndexInstruments {
-  // Partition identifier.
+  // Partition.
   string partition = 1;
-  // Computed price.
+  // Price.
   double price = 2;
-  // Trading volume.
+  // Volume.
   double volume = 3;
-  // Number of trades.
+  // Count.
   uint64 count = 4;
-  // Underlying trade information for this partition.
+  // Underlying trade for the partition.
   IndexUnderlyingTrade underlying_trade = 5;
 }
 
-// IndexUnderlyingTrade contains information about the underlying trade.
+// IndexUnderlyingTrade is underlying trade information for a partition.
 message IndexUnderlyingTrade {
-  // Amount/quantity of asset bought or sold (in base currency).
+  // Amount / quantity of asset bought or sold, displayed in base currency.
   double volume = 1;
-  // Exchange code (e.g., "cbse" for Coinbase).
+  // Instrument exchange code, for example "cbse" (Coinbase).
   string exchange = 2;
-  // Trade ID (empty string when not present).
+  // Trade ID, empty string when not present.
   string id = 3;
-  // Trade timestamp.
+  // Date of trade.
   google.protobuf.Timestamp datetime = 4;
+}
+
+// CorporateActionsRequest is the request message for corporate actions.
+message CorporateActionsRequest {
+  // ISINs to filter corporate actions by.
+  repeated string isins = 1;
+  // Start ex-date for filtering (inclusive).
+  optional google.protobuf.Timestamp start_ex_date = 2;
+  // End ex-date for filtering (exclusive).
+  optional google.protobuf.Timestamp end_ex_date = 3;
+}
+
+// CorporateActionsResponse is the response message containing corporate actions.
+message CorporateActionsResponse {
+  // List of corporate actions.
+  repeated CorporateAction corporate_actions = 1;
+}
+
+// CorporateAction represents a corporate action event.
+message CorporateAction {
+  // Unique identifier for the event.
+  string event_unique_id = 1;
+  // Event identifier.
+  string event_id = 2;
+  // Type of corporate action.
+  string action_type = 3;
+  // EDI event code.
+  string edi_event_code = 4;
+  // Status of the corporate action.
+  string status = 5;
+  // Timestamp when the event was created.
+  google.protobuf.Timestamp event_created_at = 6; // protolint:disable:this FIELD_NAMES_EXCLUDE_PREPOSITIONS
+  // Timestamp when the event was last updated.
+  google.protobuf.Timestamp last_updated_at = 7; // protolint:disable:this FIELD_NAMES_EXCLUDE_PREPOSITIONS
+  // Details of the corporate action.
+  CADetails ca_details = 8;
+  // ID details for the corporate action.
+  IDDetails id_details = 9;
+}
+
+// CADetails represents the details of a corporate action.
+message CADetails {
+  // Type of action.
+  string action_type = 1;
+  // Ex-dividend date.
+  google.protobuf.Timestamp ex_date = 2;
+  // Record date.
+  google.protobuf.Timestamp record_date = 3;
+  // Payment date.
+  google.protobuf.Timestamp payment_date = 4;
+  // Currency of the dividend.
+  string currency = 5;
+  // Gross dividend amount.
+  optional double gross_dividend = 6;
+  // Whether the dividend is provisional.
+  bool is_provisional = 7;
+  // Type of dividend.
+  string dividend_type = 8;
+  // Effective date.
+  google.protobuf.Timestamp effective_date = 9;
+}
+
+// IDDetails represents the ID details of a corporate action.
+message IDDetails {
+  // ISIN identifier.
+  string isin = 1;
+  // Ticker symbol.
+  string ticker = 2;
+  // Issuer name.
+  string issuer_name = 3;
+  // Exchange MIC code.
+  string exchange_mic = 4;
+  // Bloomberg company ID.
+  string bbg_comp_id = 5;
+  // Bloomberg company ticker.
+  string bbg_comp_ticker = 6;
+  // FIGI identifier.
+  string figi = 7;
+  // FIGI ticker.
+  string figi_ticker = 8;
 }
