@@ -10,6 +10,7 @@ Real-time and historical streaming access to index equities data.
 
 - `StreamIndex` - Real-time stream of index updates
 - `ReplayIndex` - Historical replay of index data within a time range
+- `CorporateActions` - Unary call to retrieve corporate actions
 
 ## Generating Client Code
 
