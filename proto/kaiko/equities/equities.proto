@@ -21,6 +21,8 @@ service EquitiesService {
   rpc ReplayIndex(ReplayIndexRequest) returns (stream IndexResponse) {}
   // CorporateActions returns corporate actions filtered by ISIN and ex-date range.
   rpc CorporateActions(CorporateActionsRequest) returns (CorporateActionsResponse) {}
+  // MarketCalendarV2 returns market calendar data grouped by timezone for a given date range.
+  rpc MarketCalendarV2(MarketCalendarV2Request) returns (MarketCalendarV2Response) {}
 }
 
 // IndexCommodity allows selecting kind of index update wanted.
@@ -245,4 +247,90 @@ message IDDetails {
   string figi = 7;
   // FIGI ticker.
   string figi_ticker = 8;
+}
+
+// MarketCalendarV2Request is the request message for the market calendar v2 endpoint.
+message MarketCalendarV2Request {
+  // Inclusive start date in "YYYY-MM-DD" format.
+  string start_date = 1;
+  // Inclusive end date in "YYYY-MM-DD" format.
+  string end_date = 2;
+  // Required asset class to query (e.g. "equities").
+  string asset_class = 3;
+  // Optional list of exchange codes.
+  repeated string exch = 4; // protolint:disable:this REPEATED_FIELD_NAMES_PLURALIZED
+  // Optional list of timezones (e.g. ["America/New_York"]).
+  repeated string region = 5; // protolint:disable:this REPEATED_FIELD_NAMES_PLURALIZED
+  // Optional list of desired market day statuses.
+  repeated MarketDayStatus status = 6; // protolint:disable:this REPEATED_FIELD_NAMES_PLURALIZED
+  // Optional holiday filter.
+  optional bool is_holiday = 7;
+}
+
+// MarketCalendarV2Response contains the calendar data grouped by timezone.
+message MarketCalendarV2Response {
+  // List of market calendars grouped by timezone.
+  repeated MarketCalendars market_calendars = 1;
+}
+
+// MarketCalendars contains the calendar data for a single timezone group.
+message MarketCalendars {
+  // IANA timezone identifier.
+  string timezone = 1;
+  // Calendar days for this timezone group.
+  repeated MarketCalendarDay data = 2;
+  // Asset class for this timezone group (e.g. "equities").
+  string asset_class = 3;
+}
+
+// MarketCalendarDay represents a single day in the market calendar.
+message MarketCalendarDay {
+  // Date in "YYYY-MM-DD" format.
+  string date = 1;
+  // Exchange MIC codes for this day.
+  repeated string market_mics = 2;
+  // Trading status for this day.
+  MarketDayStatus status = 3;
+  // Whether this day is a holiday.
+  bool is_holiday = 4;
+  // Whether the market is open on this day.
+  bool is_trading_day = 5;
+  // Whether this is a regular trading day.
+  bool is_regular_trading_day = 6;
+  // Reason for the status (e.g. "Weekend", "Christmas").
+  string reason = 7;
+  // Previous regular trading day (RFC3339 with timezone offset).
+  string previous_regular_trading_day = 8;
+  // Next regular trading day (RFC3339 with timezone offset).
+  string next_regular_trading_day = 9;
+  // Session schedule for this day.
+  repeated SessionEntry session_schedule = 10; // protolint:disable:this REPEATED_FIELD_NAMES_PLURALIZED
+}
+
+// MarketDayStatus represents the trading status of a market day.
+enum MarketDayStatus {
+  // Unknown status.
+  MARKET_DAY_STATUS_UNKNOWN = 0;
+  // Market is closed.
+  CLOSED = 1;
+  // Market is open with regular hours.
+  OPEN_REGULAR = 2;
+  // Market is open with irregular hours.
+  OPEN_IRREGULAR = 3;
+}
+
+// SessionEntry represents a single trading session.
+message SessionEntry {
+  // Exchange MICs this session belongs to.
+  repeated string exchanges = 1;
+  // Phase type (e.g. "Pre-Trading Session", "Primary Trading Session").
+  string phase_type = 2;
+  // Session description.
+  string description = 3;
+  // Session start time in RFC3339 format with original offset.
+  string start = 4;
+  // Session end time in RFC3339 format with original offset.
+  string end = 5;
+  // Whether this session is for actual trading.
+  bool is_trading = 6;
 }
