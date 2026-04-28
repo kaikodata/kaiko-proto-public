@@ -23,6 +23,8 @@ service EquitiesService {
   rpc CorporateActions(CorporateActionsRequest) returns (CorporateActionsResponse) {}
   // MarketCalendarV2 returns market calendar data grouped by timezone for a given date range.
   rpc MarketCalendarV2(MarketCalendarV2Request) returns (MarketCalendarV2Response) {}
+  // ReferenceData returns TradFi rate reference data filtered by the request criteria.
+  rpc ReferenceData(ReferenceDataRequest) returns (ReferenceDataResponse) {}
 }
 
 // IndexCommodity allows selecting kind of index update wanted.
@@ -247,6 +249,8 @@ message IDDetails {
   string figi = 7;
   // FIGI ticker.
   string figi_ticker = 8;
+  // IANA timezone of the asset (e.g. "America/New_York").
+  string timezone = 9;
 }
 
 // MarketCalendarV2Request is the request message for the market calendar v2 endpoint.
@@ -333,4 +337,105 @@ message SessionEntry {
   string end = 5;
   // Whether this session is for actual trading.
   bool is_trading = 6;
+}
+
+// ReferenceDataRequest is the request message for reference data.
+message ReferenceDataRequest {
+  // Filter by index codes (e.g. ["KK_RFR_AAPLUSD"]).
+  repeated string tickers = 1;
+  // Filter by base asset codes (e.g. ["aapl", "spy"]).
+  repeated string base_asset_codes = 2;
+  // Filter by base asset classes (e.g. ["equity", "equity_etf"]).
+  repeated string base_asset_classes = 3;
+  // Filter by base asset ISINs (e.g. ["US0378331005"]).
+  repeated string base_asset_isins = 4;
+  // Filter by quote asset codes (e.g. ["usd", "hkd"]).
+  repeated string quote_asset_codes = 5;
+  // Filter by timezones (e.g. ["America/New_York"]).
+  repeated string timezones = 6; // protolint:disable:this REPEATED_FIELD_NAMES_PLURALIZED
+  // Filter by exposition (e.g. ["public", "private"]).
+  repeated string exposition = 7; // protolint:disable:this REPEATED_FIELD_NAMES_PLURALIZED
+}
+
+// ReferenceDataResponse is the response message for reference data.
+message ReferenceDataResponse {
+  // List of reference data entries.
+  repeated ReferenceDataEntry entries = 1;
+}
+
+// ReferenceDataEntry represents a single rate in the reference data catalogue.
+message ReferenceDataEntry {
+  // Index code (e.g. "KK_RFR_AAPLUSD").
+  string index_code = 1;
+  // Derived rate name (e.g. "Kaiko Apple USD Equity Reference Rate").
+  string rate_name = 2;
+  // Removed: use base_asset.asset_class or base_asset.taxonomy.asset_class instead.
+  reserved 3;
+  reserved "asset_class";
+  // Trading pair (e.g. "AAPL-USD").
+  string pair = 4;
+  // List of exchange codes.
+  repeated string exchanges = 5;
+  // Base asset information.
+  ReferenceBaseAsset base_asset = 6;
+  // Quote asset information.
+  ReferenceQuoteAsset quote_asset = 7;
+  // Dissemination type (e.g. "Real-time", "Daily fixing").
+  string dissemination = 8;
+  // IANA timezone.
+  string timezone = 9;
+  // Launch date in YYYY-MM-DD format.
+  string launch_date = 10;
+  // Exposition level (e.g. "public", "private").
+  string exposition = 11;
+}
+
+// ReferenceBaseAsset holds base asset reference data.
+message ReferenceBaseAsset {
+  // Asset code (e.g. "aapl").
+  string asset_code = 1;
+  // Asset class (e.g. "equity", "equity_etf").
+  string asset_class = 2;
+  // Instrument type (e.g. "spot").
+  string instrument = 3;
+  // Human-readable name (e.g. "Apple").
+  string name = 4;
+  // ISIN identifier.
+  string isin = 5;
+  // Bloomberg company ID.
+  string bbg_comp_id = 6;
+  // IANA timezone.
+  string timezone = 7;
+  // Kaiko taxonomy classification.
+  ReferenceTaxonomy taxonomy = 8;
+}
+
+// ReferenceQuoteAsset holds quote asset reference data.
+message ReferenceQuoteAsset {
+  // Asset code (e.g. "usd").
+  string asset_code = 1;
+  // Asset class (e.g. "fiat").
+  string asset_class = 2;
+  // Human-readable name (e.g. "US Dollar").
+  string name = 3;
+}
+
+// ReferenceTaxonomy holds Kaiko taxonomy classification.
+message ReferenceTaxonomy {
+  // Version of the taxonomy (e.g. "1.0").
+  string taxonomy_version = 1;
+  // Kaiko taxonomy code (e.g. "EQ.STK.SPOT.XCHG.US").
+  string kaiko_taxonomy_code = 2;
+  // Asset class (e.g. "Equity", "ETF").
+  string asset_class = 3;
+  // Instrument type (e.g. "Stock", "Fund").
+  string instrument_type = 4;
+  // Market phase (e.g. "Spot", "Futures").
+  string market_phase = 5;
+  // Market venue (e.g. "Exchange", "OTC").
+  string market_venue = 6;
+  // Geographic region (e.g. "Americas", "APAC").
+  string geo_region = 7;
+  // Geographic country (e.g. "US", "HK").
+  string geo_country = 8;
 }
