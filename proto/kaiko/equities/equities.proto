@@ -25,6 +25,12 @@ service EquitiesService {
   rpc MarketCalendarV2(MarketCalendarV2Request) returns (MarketCalendarV2Response) {}
   // ReferenceData returns TradFi rate reference data filtered by the request criteria.
   rpc ReferenceData(ReferenceDataRequest) returns (ReferenceDataResponse) {}
+  // StreamFuturesRates streams real-time futures rate computations.
+  rpc StreamFuturesRates(StreamFuturesRatesRequest) returns (stream FuturesRatesResponse) {}
+  // ReplayFuturesRates replays historical futures rate computations within a time range.
+  rpc ReplayFuturesRates(ReplayFuturesRatesRequest) returns (stream FuturesRatesResponse) {}
+  // CorporateActionsOracle returns a signed corporate actions payload for on-chain publishing.
+  rpc CorporateActionsOracle(CorporateActionsOracleRequest) returns (CorporateActionsOracleResponse) {}
 }
 
 // IndexCommodity allows selecting kind of index update wanted.
@@ -339,6 +345,112 @@ message SessionEntry {
   bool is_trading = 6;
 }
 
+// StreamFuturesRatesRequest is the request message for streaming futures rates.
+message StreamFuturesRatesRequest {
+  // Index codes to subscribe to, e.g. ["KK_FR_MCAUSD"].
+  repeated string index_codes = 1;
+}
+
+// ReplayFuturesRatesRequest is the request message for replaying historical futures rates.
+message ReplayFuturesRatesRequest {
+  // Index codes to filter by, e.g. ["KK_FR_MCAUSD"].
+  repeated string index_codes = 1;
+  // Start time for the replay (inclusive).
+  google.protobuf.Timestamp start_time = 2;
+  // End time for the replay (exclusive).
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// FuturesRatesResponse is a single futures rate update.
+message FuturesRatesResponse {
+  // Index code.
+  string index_code = 1;
+  // Final computed price.
+  double price = 2;
+  // Blended futures price before discount.
+  double blended_price = 3;
+  // Discount factor (dt_final).
+  double dt_final = 4;
+  // Time to maturity in seconds.
+  double ttm = 5;
+  // Timestamp of the computation.
+  google.protobuf.Timestamp timestamp = 6;
+  // Start time of the computation interval.
+  google.protobuf.Timestamp start_time = 7;
+  // End time of the computation interval.
+  google.protobuf.Timestamp end_time = 8;
+  // Front future details.
+  FuturesDetail front_future = 9;
+  // Back future details.
+  FuturesDetail back_future = 10;
+  // Spot rate used for discount factor computation.
+  FuturesSpotRate spot_rate = 11;
+  // Quote currency.
+  string quote = 12;
+  // Exchanges.
+  repeated string exchanges = 13;
+  // Sequence ID.
+  string sequence_id = 14;
+  // Session detection method.
+  IndexSessionDetector session_detector = 15;
+}
+
+// FuturesDetail holds details about a single future contract.
+message FuturesDetail {
+  // Instrument symbol, e.g. "mcaj6".
+  string symbol = 1;
+  // Computed price.
+  double price = 2;
+  // Expiry date.
+  google.protobuf.Timestamp expiry = 3;
+  // Weight applied in the blended price.
+  double weight = 4;
+  // Partition-level computation detail.
+  repeated FuturesPair pairs = 5;
+}
+
+// FuturesPair holds the computation detail for a single trading pair.
+message FuturesPair {
+  // Trading pair, e.g. "sbfmk0026-usx".
+  string pair = 1;
+  // Partition-level instrument details.
+  repeated FuturesPartition instruments = 2;
+}
+
+// FuturesPartition holds the computation detail for a single partition.
+message FuturesPartition {
+  // Partition identifier.
+  string partition = 1;
+  // Computed price for this partition.
+  double price = 2;
+  // Volume in this partition.
+  double volume = 3;
+  // Number of trades in this partition.
+  uint64 count = 4;
+  // Last underlying trade in this partition.
+  FuturesTrade trade = 5;
+}
+
+// FuturesTrade holds the last underlying trade for a partition.
+message FuturesTrade {
+  // Exchange code, e.g. "icus".
+  string exchange = 1;
+  // Trade ID.
+  string id = 2;
+  // Trade timestamp.
+  google.protobuf.Timestamp datetime = 3;
+  // Trade volume.
+  double volume = 4;
+}
+
+// FuturesSpotRate holds the spot rate used for discount factor computation.
+message FuturesSpotRate {
+  // Index code of the spot rate.
+  string index_code = 1;
+  // Spot rate price.
+  double price = 2;
+}
+
 // ReferenceDataRequest is the request message for reference data.
 message ReferenceDataRequest {
   // Filter by index codes (e.g. ["KK_RFR_AAPLUSD"]).
@@ -438,4 +550,67 @@ message ReferenceTaxonomy {
   string geo_region = 7;
   // Geographic country (e.g. "US", "HK").
   string geo_country = 8;
+}
+
+// CorporateActionsOracleRequest is the request message for the oracle endpoint.
+message CorporateActionsOracleRequest {
+  // ISINs to include in the oracle payload (max 10, must be in the allowed list).
+  repeated string isins = 1;
+  // Optional start ex-date for the window (defaults to now - 30 days).
+  optional google.protobuf.Timestamp start_ex_date = 2;
+  // Optional end ex-date for the window (defaults to now + 180 days).
+  optional google.protobuf.Timestamp end_ex_date = 3;
+}
+
+// OracleWindow describes the ex-date window covered by the oracle payload.
+message OracleWindow {
+  // Start ex-date in YYYY-MM-DD format (exclusive).
+  string start_ex_date = 1;
+  // End ex-date in YYYY-MM-DD format (exclusive).
+  string end_ex_date = 2; // protolint:disable:this FIELD_NAMES_EXCLUDE_PREPOSITIONS
+}
+
+// OracleEvent is a single corporate action event in the oracle payload.
+// Dividend economics (currency, gross_dividend, etc.) are intentionally omitted.
+message OracleEvent {
+  // Unique identifier for the event.
+  string event_unique_id = 1;
+  // Event identifier.
+  string event_id = 2;
+  // EDI event code.
+  string edi_event_code = 3;
+  // Type of corporate action.
+  string action_type = 4;
+  // Status of the corporate action.
+  string status = 5;
+  // Timestamp when the event was created.
+  google.protobuf.Timestamp event_created_at = 6; // protolint:disable:this FIELD_NAMES_EXCLUDE_PREPOSITIONS
+  // Corporate action details (dividend economics stripped).
+  CADetails ca_details = 7;
+  // Timestamp when the event was last updated.
+  google.protobuf.Timestamp last_updated_at = 8; // protolint:disable:this FIELD_NAMES_EXCLUDE_PREPOSITIONS
+}
+
+// OracleItem groups oracle events by ISIN.
+message OracleItem {
+  // ISIN and related identifiers.
+  IDDetails id_details = 1;
+  // True if the event list was truncated to the per-ISIN cap.
+  bool is_truncated = 2;
+  // Events for this ISIN within the oracle window.
+  repeated OracleEvent events = 3;
+}
+
+// CorporateActionsOracleResponse is the signed oracle payload returned to the caller.
+message CorporateActionsOracleResponse {
+  // Schema version, always "kaiko.ca.oracle.v1".
+  string schema_version = 1;
+  // ISO-8601 UTC timestamp when the payload was generated.
+  string generated_at = 2; // protolint:disable:this FIELD_NAMES_EXCLUDE_PREPOSITIONS
+  // The ex-date window covered by this payload.
+  OracleWindow window = 3;
+  // One entry per requested ISIN, sorted by ISIN ascending.
+  repeated OracleItem items = 4;
+  // 0x-prefixed hex-encoded ECDSA secp256k1 signature over the unsigned payload JSON.
+  string signature = 5;
 }
