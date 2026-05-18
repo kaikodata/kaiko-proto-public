@@ -31,6 +31,10 @@ service EquitiesService {
   rpc ReplayFuturesRates(ReplayFuturesRatesRequest) returns (stream FuturesRatesResponse) {}
   // CorporateActionsOracle returns a signed corporate actions payload for on-chain publishing.
   rpc CorporateActionsOracle(CorporateActionsOracleRequest) returns (CorporateActionsOracleResponse) {}
+  // StreamForexRates streams real-time forex converted rate data.
+  rpc StreamForexRates(StreamForexRatesRequest) returns (stream ForexRatesResponse) {}
+  // ReplayForexRates replays historical forex converted rate data within a time range.
+  rpc ReplayForexRates(ReplayForexRatesRequest) returns (stream ForexRatesResponse) {}
 }
 
 // IndexCommodity allows selecting kind of index update wanted.
@@ -613,4 +617,50 @@ message CorporateActionsOracleResponse {
   repeated OracleItem items = 4;
   // 0x-prefixed hex-encoded ECDSA secp256k1 signature over the unsigned payload JSON.
   string signature = 5;
+}
+
+// StreamForexRatesRequest is the request for streaming forex converted rate data.
+message StreamForexRatesRequest {
+  // Index codes to filter by (e.g., ["KK_RFR_AAPLUSD_EUR"]).
+  repeated string index_codes = 1;
+}
+
+// ReplayForexRatesRequest is the request for replaying historical forex converted rate data.
+message ReplayForexRatesRequest {
+  // Index codes to filter by (e.g., ["KK_RFR_AAPLUSD_EUR"]).
+  repeated string index_codes = 1;
+  // Start time for the replay (inclusive). Bounded to max replay interval from now.
+  google.protobuf.Timestamp start_time = 2;
+  // End time for the replay (exclusive). Defaults to current time.
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// ForexRatesResponse is a single forex converted rate message.
+message ForexRatesResponse {
+  // Forex index code (e.g., "KK_RFR_AAPLUSD_EUR").
+  string index_code = 1;
+  // Final converted price (underlying * fx_rate, or underlying / fx_rate if inverse).
+  double price = 2;
+  // Event timestamp.
+  google.protobuf.Timestamp ts_event = 3;
+  // Composition details showing underlying and FX rate components.
+  ForexRatesComposition composition = 4;
+}
+
+// ForexRatesComposition describes the components of a forex converted rate.
+message ForexRatesComposition {
+  // Underlying rate component.
+  ForexRatesComponent underlying = 1;
+  // FX conversion rate component.
+  ForexRatesComponent fx_rate = 2;
+}
+
+// ForexRatesComponent is one component (underlying or FX rate) of a forex conversion.
+message ForexRatesComponent {
+  // Index code of the component (e.g., "KK_RFR_AAPLUSD" or "KK_RFR_EURUSD").
+  string name = 1;
+  // Price of the component.
+  double price = 2;
+  // Event timestamp of the component.
+  google.protobuf.Timestamp ts_event = 3;
 }
