@@ -35,6 +35,10 @@ service EquitiesService {
   rpc StreamForexRates(StreamForexRatesRequest) returns (stream ForexRatesResponse) {}
   // ReplayForexRates replays historical forex converted rate data within a time range.
   rpc ReplayForexRates(ReplayForexRatesRequest) returns (stream ForexRatesResponse) {}
+  // StreamCantonOracle streams signed oracle data and the associated Canton MasterOracle disclosure
+  // for one or more non-crypto feeds (equities, FX, commodities). The disclosure is fetched once per
+  // feed when the stream opens and reused; one payload is emitted per upstream tick, at receipt time.
+  rpc StreamCantonOracle(StreamCantonOracleRequest) returns (stream CantonOracleResponse) {}
 }
 
 // IndexCommodity allows selecting kind of index update wanted.
@@ -676,4 +680,56 @@ message ForexRatesComponent {
   double price = 2;
   // Event timestamp of the component.
   google.protobuf.Timestamp ts_event = 3;
+}
+
+// StreamCantonOracleRequest contains the feeds to multiplex on a single Canton oracle stream.
+message StreamCantonOracleRequest {
+  // feeds is the list of feeds to subscribe to (at least one).
+  repeated CantonOracleFeed feeds = 1;
+  // network selects the Canton network to stream from. Required; must be "mainnet" or "testnet".
+  string network = 2;
+}
+
+// CantonOracleFeed identifies a single Canton oracle feed by category and id.
+message CantonOracleFeed {
+  // feedCategory is the type of data, e.g. equities, fx or commodities.
+  string feed_category = 1;
+  // feedID is the ID of the feed, e.g. an index code such as KAIKO_US_TECH_100.
+  string feed_id = 2;
+}
+
+// CantonOracleResponse contains the signed oracle data and the Canton MasterOracle disclosure.
+message CantonOracleResponse {
+  // data contains the signed oracle data payload.
+  CantonOracleData data = 1;
+  // canton_oracle contains the MasterOracle disclosure for contract interaction.
+  CantonOraclePayload canton_oracle = 2;
+}
+
+// CantonOracleData contains the oracle data information for a single feed.
+message CantonOracleData {
+  // name is the ID of the feed.
+  string name = 1;
+  // value is the value of the rate. It is unset when the upstream tick carries no price (e.g. the
+  // market is closed); such ticks are still emitted and still signed (the value is signed as an
+  // empty string), so the signature remains verifiable with the value left unset.
+  optional int64 value = 2;
+  // decimal specifies that the actual value must be equal to value * 10e-{decimal}.
+  int32 decimal = 3;
+  // timestamp is the millisecond UTC epoch of the value.
+  int64 timestamp = 4;
+  // signature is the DER formatted SECP256K1 signature of the SHA-256 hash of the concatenation of all fields in the data payload.
+  string signature = 5;
+}
+
+// CantonOraclePayload is a JSON payload that allows the client to use the KaikoOraclePull contract and publish their own price.
+message CantonOraclePayload {
+  // templateId for the canton contract template.
+  string template_id = 1;
+  // contractId for the canton contract.
+  string contract_id = 2;
+  // synchronizerId for the canton synchronizer.
+  string synchronizer_id = 3;
+  // createdEventBlob contains the serialized contract event data.
+  string created_event_blob = 4;
 }
