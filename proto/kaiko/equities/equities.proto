@@ -35,6 +35,9 @@ service EquitiesService {
   rpc StreamForexRates(StreamForexRatesRequest) returns (stream ForexRatesResponse) {}
   // ReplayForexRates replays historical forex converted rate data within a time range.
   rpc ReplayForexRates(ReplayForexRatesRequest) returns (stream ForexRatesResponse) {}
+  // StreamTopOfBook streams real-time top-of-book (best bid and ask) updates for an equities
+  // exchange (e.g. Nasdaq), optionally filtered to a set of symbols.
+  rpc StreamTopOfBook(StreamTopOfBookRequest) returns (stream TopOfBookResponse) {}
   // StreamCantonOracle streams signed oracle data and the associated Canton MasterOracle disclosure
   // for one or more non-crypto feeds (equities, FX, commodities). The disclosure is fetched once per
   // feed when the stream opens and reused; one payload is emitted per upstream tick, at receipt time.
@@ -680,6 +683,40 @@ message ForexRatesComponent {
   double price = 2;
   // Event timestamp of the component.
   google.protobuf.Timestamp ts_event = 3;
+}
+
+// StreamTopOfBookRequest is the request for streaming equities top-of-book data.
+// protolint:disable:next MESSAGE_NAMES_EXCLUDE_PREPOSITIONS
+message StreamTopOfBookRequest {
+  // Exchange code to subscribe to (e.g. "nsdq" for Nasdaq). Required.
+  string exchange_code = 1;
+  // Symbols to filter by (e.g. ["AAPL", "MSFT"]). If empty, every symbol on the
+  // exchange is streamed.
+  repeated string symbols = 2;
+}
+
+// TopOfBookResponse is a single two-sided top-of-book snapshot for one instrument.
+// protolint:disable:next MESSAGE_NAMES_EXCLUDE_PREPOSITIONS
+message TopOfBookResponse {
+  // Exchange code (e.g. "nsdq").
+  string exchange_code = 1;
+  // Instrument symbol (e.g. "AAPL").
+  string symbol = 2;
+  // Best bid (highest buy order).
+  TopOfBookLevel bid = 3;
+  // Best ask (lowest sell order).
+  TopOfBookLevel ask = 4;
+  // Exchange-supplied timestamp of the snapshot.
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+// TopOfBookLevel is one side (bid or ask) of a top-of-book snapshot.
+// protolint:disable:next MESSAGE_NAMES_EXCLUDE_PREPOSITIONS
+message TopOfBookLevel {
+  // Price.
+  double price = 1;
+  // Quantity available at this price.
+  double quantity = 2;
 }
 
 // StreamCantonOracleRequest contains the feeds to multiplex on a single Canton oracle stream.
