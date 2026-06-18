@@ -708,6 +708,10 @@ message TopOfBookResponse {
   TopOfBookLevel ask = 4;
   // Exchange-supplied timestamp of the snapshot.
   google.protobuf.Timestamp timestamp = 5;
+  // Asset class of the instrument (e.g. CLASS_EQUITIES).
+  Class class = 6;
+  // Update type. UPDATE_TYPE_BBO denotes a two-sided best bid and ask snapshot.
+  UpdateType update_type = 7;
 }
 
 // TopOfBookLevel is one side (bid or ask) of a top-of-book snapshot.
@@ -717,6 +721,22 @@ message TopOfBookLevel {
   double price = 1;
   // Quantity available at this price.
   double quantity = 2;
+}
+
+// Class is the asset class of an instrument.
+enum Class {
+  // Unknown / unset asset class.
+  CLASS_UNKNOWN = 0;
+  // Cash equities (stocks and ETFs).
+  CLASS_EQUITIES = 1;
+}
+
+// UpdateType describes the kind of top-of-book update carried by a TopOfBookResponse.
+enum UpdateType {
+  // Unknown / unset update type.
+  UPDATE_TYPE_UNKNOWN = 0;
+  // Two-sided best bid and offer snapshot.
+  UPDATE_TYPE_BBO = 1;
 }
 
 // StreamCantonOracleRequest contains the feeds to multiplex on a single Canton oracle stream.
