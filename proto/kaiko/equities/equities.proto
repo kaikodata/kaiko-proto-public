@@ -246,6 +246,42 @@ message CADetails {
   string dividend_type = 8;
   // Effective date.
   google.protobuf.Timestamp effective_date = 9;
+  // Old ratio term (SD, DIV(S), BON, CONSD, RTS, ENT, DIST). EDI ratioold.
+  optional double ratio_old = 10;
+  // New ratio term (SD, DIV(S), BON, CONSD, RTS, ENT, DIST). EDI rationew.
+  optional double ratio_new = 11;
+  // Subscription/issue price (rights issue). EDI issueprice.
+  optional double issue_price = 12;
+  // Subscription period start (rights issue). EDI startsubscriptiondt.
+  google.protobuf.Timestamp start_subscription_dt = 13;
+  // Subscription period end (rights issue). EDI endsubscriptiondt.
+  google.protobuf.Timestamp end_subscription_dt = 14;
+  // ISIN of the right/entitlement instrument (rights issue). EDI traisin.
+  string right_isin = 15;
+  // Security id of the right/entitlement instrument (rights issue). EDI trasecid.
+  string right_sec_id = 16;
+  // Merger status (merger). EDI mrgrstatus.
+  string mrgr_status = 17;
+  // Expected completion date (merger). EDI expcompletiondt.
+  google.protobuf.Timestamp exp_completion_dt = 18;
+  // Old par value (capital reduction). EDI parvalueold.
+  optional double par_value_old = 19;
+  // New par value (capital reduction). EDI parvaluenew.
+  optional double par_value_new = 20;
+  // ISIN of the resulting/out instrument (merger, distribution). EDI outisin.
+  string out_isin = 21;
+  // Security id of the resulting/out instrument (merger, distribution). EDI outsecid.
+  string out_sec_id = 22;
+  // Payment type code (merger, dividend): C=Cash, S=Stock, B=Both, D/""=TBC. EDI paytypecd.
+  string pay_type_cd = 23;
+  // Minimum consideration price (merger, cash). EDI minprice.
+  optional double min_price = 24;
+  // Maximum consideration price (merger, cash). EDI maxprice.
+  optional double max_price = 25;
+  // Cash-back / cash consideration per share (takeover, tender offer). EDI cashback.
+  string cash_back = 26;
+  // Offeror name (takeover, tender offer). EDI offerorname.
+  string offeror_name = 27;
 }
 
 // IDDetails represents the ID details of a corporate action.
