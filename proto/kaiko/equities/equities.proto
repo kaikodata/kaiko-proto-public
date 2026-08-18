@@ -36,12 +36,28 @@ service EquitiesService {
   // ReplayForexRates replays historical forex converted rate data within a time range.
   rpc ReplayForexRates(ReplayForexRatesRequest) returns (stream ForexRatesResponse) {}
   // StreamTopOfBook streams real-time top-of-book (best bid and ask) updates for an equities
-  // exchange (e.g. Nasdaq), optionally filtered to a set of symbols.
+  // exchange (e.g. Nasdaq BASIC), optionally filtered to a set of symbols.
   rpc StreamTopOfBook(StreamTopOfBookRequest) returns (stream TopOfBookResponse) {}
   // StreamCantonOracle streams signed oracle data and the associated Canton MasterOracle disclosure
   // for one or more non-crypto feeds (equities, FX, commodities). The disclosure is fetched once per
   // feed when the stream opens and reused; one payload is emitted per upstream tick, at receipt time.
   rpc StreamCantonOracle(StreamCantonOracleRequest) returns (stream CantonOracleResponse) {}
+  // StreamCantonOracleV2 streams Pull Oracle V2 signed payloads (DataStandard.SignatureVerifierV1) for
+  // one or more feeds. Each upstream tick produces one CantonOracleV2Response carrying a SignedPayloadV2
+  // (published_at, expires_at, optional cost and a strict typed quote) signed with the "v1-quote-concat"
+  // canonical codec, plus the disclosure of the global KaikoSignatureVerifier contract.
+  rpc StreamCantonOracleV2(StreamCantonOracleV2Request) returns (stream CantonOracleV2Response) {}
+  // GetOraclePrice returns a Kaiko-signed price for one instrument of any asset class (equity, FX,
+  // US treasury, crypto) from the EVM pull oracle. The signature is a 65-byte secp256k1 signature
+  // (r||s||v, 0x-prefixed hex) over the EIP-712 typed-data digest of the
+  // Price(assetClass, instrumentId, price, decimal, timestamp) payload, bound to the signing domain
+  // of the requested blockchain and verifiable on-chain against Kaiko's authorised address.
+  rpc GetOraclePrice(GetOraclePriceRequest) returns (GetOraclePriceResponse) {}
+  // StreamOraclePrice streams Kaiko EIP-712 signed prices from the EVM pull oracle for one or more
+  // instruments, all signed for the requested blockchain. One payload is emitted per priced
+  // upstream tick, at receipt time; it never replays or heartbeats, and a no-price tick (market
+  // closed) is skipped — the stream is silent while a market is closed.
+  rpc StreamOraclePrice(StreamOraclePriceRequest) returns (stream GetOraclePriceResponse) {}
 }
 
 // IndexCommodity allows selecting kind of index update wanted.
@@ -612,6 +628,107 @@ message ReferenceTaxonomy {
   string geo_country = 8;
 }
 
+// StreamForexRatesRequest is the request for streaming forex converted rate data.
+message StreamForexRatesRequest {
+  // Index codes to filter by (e.g., ["KK_RFR_700HKD_USD"]).
+  repeated string index_codes = 1;
+}
+
+// ReplayForexRatesRequest is the request for replaying historical forex converted rate data.
+message ReplayForexRatesRequest {
+  // Index codes to filter by (e.g., ["KK_RFR_700HKD_USD"]).
+  repeated string index_codes = 1;
+  // Start time for the replay (inclusive). Bounded to max replay interval from now.
+  google.protobuf.Timestamp start_time = 2;
+  // End time for the replay (exclusive). Defaults to current time.
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// ForexRatesResponse is a single forex converted rate message.
+message ForexRatesResponse {
+  // Forex index code (e.g., "KK_RFR_700HKD_USD").
+  string index_code = 1;
+  // Final converted price (underlying * fx_rate, or underlying / fx_rate if inverse).
+  double price = 2;
+  // Event timestamp.
+  google.protobuf.Timestamp ts_event = 3;
+  // Composition details showing underlying and FX rate components.
+  ForexRatesComposition composition = 4;
+}
+
+// ForexRatesComposition describes the components of a forex converted rate.
+message ForexRatesComposition {
+  // Underlying rate component.
+  ForexRatesComponent underlying = 1;
+  // FX conversion rate component.
+  ForexRatesComponent fx_rate = 2;
+}
+
+// ForexRatesComponent is one component (underlying or FX rate) of a forex conversion.
+message ForexRatesComponent {
+  // Index code of the component (e.g., "KK_RFR_700HKD" or "KK_RFR_HKDUSD").
+  string name = 1;
+  // Price of the component.
+  double price = 2;
+  // Event timestamp of the component.
+  google.protobuf.Timestamp ts_event = 3;
+}
+
+// StreamTopOfBookRequest is the request for streaming equities top-of-book data.
+// protolint:disable:next MESSAGE_NAMES_EXCLUDE_PREPOSITIONS
+message StreamTopOfBookRequest {
+  // Exchange code to subscribe to (e.g. "nsdq" for Nasdaq BASIC). Required.
+  string exchange_code = 1;
+  // Symbols to filter by (e.g. ["AAPL", "MSFT"]). If empty, every symbol on the
+  // exchange is streamed.
+  repeated string symbols = 2;
+}
+
+// TopOfBookResponse is a single two-sided top-of-book snapshot for one instrument.
+// protolint:disable:next MESSAGE_NAMES_EXCLUDE_PREPOSITIONS
+message TopOfBookResponse {
+  // Exchange code (e.g. "nsdq").
+  string exchange_code = 1;
+  // Instrument symbol (e.g. "AAPL").
+  string symbol = 2;
+  // Best bid (highest buy order).
+  TopOfBookLevel bid = 3;
+  // Best ask (lowest sell order).
+  TopOfBookLevel ask = 4;
+  // Exchange-supplied timestamp of the snapshot.
+  google.protobuf.Timestamp timestamp = 5;
+  // Asset class of the instrument. Constant CLASS_EQUITIES for the Nasdaq BASIC
+  // equities feed today; modeled as an enum to allow other asset classes later.
+  Class class = 6;
+  // Update type. Constant UPDATE_TYPE_BBO today (two-sided best bid and ask).
+  UpdateType update_type = 7;
+}
+
+// TopOfBookLevel is one side (bid or ask) of a top-of-book snapshot.
+// protolint:disable:next MESSAGE_NAMES_EXCLUDE_PREPOSITIONS
+message TopOfBookLevel {
+  // Price.
+  double price = 1;
+  // Quantity available at this price.
+  double quantity = 2;
+}
+
+// Class is the asset class of an instrument.
+enum Class {
+  // Unknown / unset asset class.
+  CLASS_UNKNOWN = 0;
+  // Cash equities (stocks and ETFs).
+  CLASS_EQUITIES = 1;
+}
+
+// UpdateType describes the kind of top-of-book update carried by a TopOfBookResponse.
+enum UpdateType {
+  // Unknown / unset update type.
+  UPDATE_TYPE_UNKNOWN = 0;
+  // Two-sided best bid and offer snapshot.
+  UPDATE_TYPE_BBO = 1;
+}
+
 // CorporateActionsOracleRequest is the request message for the oracle endpoint.
 message CorporateActionsOracleRequest {
   // ISINs to include in the oracle payload (max 10, must be in the allowed list).
@@ -675,106 +792,6 @@ message CorporateActionsOracleResponse {
   string signature = 5;
 }
 
-// StreamForexRatesRequest is the request for streaming forex converted rate data.
-message StreamForexRatesRequest {
-  // Index codes to filter by (e.g., ["KK_RFR_AAPLUSD_EUR"]).
-  repeated string index_codes = 1;
-}
-
-// ReplayForexRatesRequest is the request for replaying historical forex converted rate data.
-message ReplayForexRatesRequest {
-  // Index codes to filter by (e.g., ["KK_RFR_AAPLUSD_EUR"]).
-  repeated string index_codes = 1;
-  // Start time for the replay (inclusive). Bounded to max replay interval from now.
-  google.protobuf.Timestamp start_time = 2;
-  // End time for the replay (exclusive). Defaults to current time.
-  google.protobuf.Timestamp end_time = 3;
-}
-
-// ForexRatesResponse is a single forex converted rate message.
-message ForexRatesResponse {
-  // Forex index code (e.g., "KK_RFR_AAPLUSD_EUR").
-  string index_code = 1;
-  // Final converted price (underlying * fx_rate, or underlying / fx_rate if inverse).
-  double price = 2;
-  // Event timestamp.
-  google.protobuf.Timestamp ts_event = 3;
-  // Composition details showing underlying and FX rate components.
-  ForexRatesComposition composition = 4;
-}
-
-// ForexRatesComposition describes the components of a forex converted rate.
-message ForexRatesComposition {
-  // Underlying rate component.
-  ForexRatesComponent underlying = 1;
-  // FX conversion rate component.
-  ForexRatesComponent fx_rate = 2;
-}
-
-// ForexRatesComponent is one component (underlying or FX rate) of a forex conversion.
-message ForexRatesComponent {
-  // Index code of the component (e.g., "KK_RFR_AAPLUSD" or "KK_RFR_EURUSD").
-  string name = 1;
-  // Price of the component.
-  double price = 2;
-  // Event timestamp of the component.
-  google.protobuf.Timestamp ts_event = 3;
-}
-
-// StreamTopOfBookRequest is the request for streaming equities top-of-book data.
-// protolint:disable:next MESSAGE_NAMES_EXCLUDE_PREPOSITIONS
-message StreamTopOfBookRequest {
-  // Exchange code to subscribe to (e.g. "nsdq" for Nasdaq). Required.
-  string exchange_code = 1;
-  // Symbols to filter by (e.g. ["AAPL", "MSFT"]). If empty, every symbol on the
-  // exchange is streamed.
-  repeated string symbols = 2;
-}
-
-// TopOfBookResponse is a single two-sided top-of-book snapshot for one instrument.
-// protolint:disable:next MESSAGE_NAMES_EXCLUDE_PREPOSITIONS
-message TopOfBookResponse {
-  // Exchange code (e.g. "nsdq").
-  string exchange_code = 1;
-  // Instrument symbol (e.g. "AAPL").
-  string symbol = 2;
-  // Best bid (highest buy order).
-  TopOfBookLevel bid = 3;
-  // Best ask (lowest sell order).
-  TopOfBookLevel ask = 4;
-  // Exchange-supplied timestamp of the snapshot.
-  google.protobuf.Timestamp timestamp = 5;
-  // Asset class of the instrument (e.g. CLASS_EQUITIES).
-  Class class = 6;
-  // Update type. UPDATE_TYPE_BBO denotes a two-sided best bid and ask snapshot.
-  UpdateType update_type = 7;
-}
-
-// TopOfBookLevel is one side (bid or ask) of a top-of-book snapshot.
-// protolint:disable:next MESSAGE_NAMES_EXCLUDE_PREPOSITIONS
-message TopOfBookLevel {
-  // Price.
-  double price = 1;
-  // Quantity available at this price.
-  double quantity = 2;
-}
-
-// Class is the asset class of an instrument.
-enum Class {
-  // Unknown / unset asset class.
-  CLASS_UNKNOWN = 0;
-  // Cash equities (stocks and ETFs).
-  CLASS_EQUITIES = 1;
-}
-
-// UpdateType describes the kind of top-of-book update carried by a TopOfBookResponse.
-enum UpdateType {
-  // Unknown / unset update type.
-  UPDATE_TYPE_UNKNOWN = 0;
-  // Two-sided best bid and offer snapshot.
-  UPDATE_TYPE_BBO = 1;
-}
-
 // StreamCantonOracleRequest contains the feeds to multiplex on a single Canton oracle stream.
 message StreamCantonOracleRequest {
   // feeds is the list of feeds to subscribe to (at least one).
@@ -825,4 +842,151 @@ message CantonOraclePayload {
   string synchronizer_id = 3;
   // createdEventBlob contains the serialized contract event data.
   string created_event_blob = 4;
+}
+
+// StreamCantonOracleV2Request contains the feeds to multiplex on a single Pull Oracle V2 stream.
+message StreamCantonOracleV2Request {
+  // feeds is the list of feeds to subscribe to (at least one).
+  repeated CantonOracleFeedV2 feeds = 1;
+  // network selects the Canton network to stream from. Required; must be "mainnet" or "testnet".
+  string network = 2;
+}
+
+// CantonOracleFeedV2 identifies a single Pull Oracle V2 feed by category and id.
+message CantonOracleFeedV2 {
+  // feedCategory is the feed family, e.g. equities, fx, commodities, crypto or nav.
+  string feed_category = 1;
+  // feedID is the ID of the feed, e.g. an index code such as KK_RFR_EURUSD or a DTI.
+  string feed_id = 2;
+}
+
+// CantonOracleV2Response is one Pull Oracle V2 signed update for exactly one feed. Only `payload` is
+// signed; the routing fields and canonical_hash are not covered by the signature.
+message CantonOracleV2Response {
+  // network the payload belongs to; echoes the request.
+  string network = 1;
+  // feedCategory echoes the selector.
+  string feed_category = 2;
+  // feedID is the feed this message belongs to; equals payload.quote.feedID.
+  string feed_id = 3;
+  // payload is the oracle-signed payload, reconstructed verbatim and re-canonicalised on-ledger.
+  SignedPayloadV2 payload = 4;
+  // signature is the hex-encoded DER secp256k1 signature over the sha256 digest of the hex-encoded
+  // canonical text of `payload`: codec "v1-quote-concat" when `payload.cost` is unset (free path),
+  // "v1-paid-quote-concat" when it is set (paid path, cost + payee).
+  string signature = 5;
+  // canonicalHash is the informative lowercase-hex sha256 digest of the hex-encoded canonical text,
+  // for client-side pre-checks only; the verifier always recomputes it on-ledger.
+  string canonical_hash = 6;
+  // verifierContract identifies the verifier contract whose key signed this payload (KaikoQuoteVerifier
+  // when free, KaikoPaidQuoteVerifier when paid) and carries its explicit-disclosure blob. The subscriber
+  // passes it through unmodified.
+  VerifierContract verifier_contract = 7;
+}
+
+// VerifierContract identifies the verifier contract (KaikoQuoteVerifier when free, KaikoPaidQuoteVerifier
+// when paid) whose key signed a V2 payload, and carries its explicit-disclosure blob. The subscriber
+// passes these through unmodified when exercising the verifier on-ledger. Field names are camelCase to
+// mirror the on-ledger disclosed-contract literal.
+// protolint:disable FIELD_NAMES_LOWER_SNAKE_CASE
+message VerifierContract {
+  // templateId is the fully-qualified Daml template id of the verifier contract.
+  string templateId = 1;
+  // contractId is the ledger contract id of the verifier contract.
+  string contractId = 2;
+  // createdEventBlob is the opaque explicit-disclosure blob (base64) for the verifier contract.
+  string createdEventBlob = 3;
+}
+// protolint:enable FIELD_NAMES_LOWER_SNAKE_CASE
+
+// SignedPayloadV2 is the record signed off-chain by the oracle (DataStandard.SignatureVerifierV1).
+// The field names mirror the Canton PaidSignedPayload literal the
+// PaidQuoteConsumer.VerifyAndRecordQuote choice consumes.
+// protolint:disable FIELD_NAMES_LOWER_SNAKE_CASE
+// protolint:disable FIELD_NAMES_EXCLUDE_PREPOSITIONS
+message SignedPayloadV2 {
+  // publishedAt is when the oracle produced this payload, as an ISO-8601 UTC timestamp with microsecond
+  // precision (e.g. "2026-07-04T13:41:50.852000Z"), injected as a DAML Time.
+  string publishedAt = 1;
+  // expiresAt is the validity deadline, as an ISO-8601 UTC timestamp with microsecond precision (e.g.
+  // "2026-07-04T13:41:50.852000Z"), injected as a DAML Time; Verify rejects a payload strictly later.
+  string expiresAt = 2;
+  // cost is the per-call price. Unset means the unpriced (free) case (cost = None), signed with the
+  // "v1-quote-concat" codec; when set the payload is signed with the "v1-paid-quote-concat" codec.
+  optional CostV2 cost = 3;
+  // quote is the strict typed quote.
+  QuoteV2 quote = 4;
+  // payee is the fee recipient the oracle signs into every paid payload (DataStandard PaidSignedPayload
+  // .payee). Set only on the paid path (alongside cost) and covered by the signature; empty on the free
+  // path.
+  string payee = 5;
+}
+// protolint:enable FIELD_NAMES_EXCLUDE_PREPOSITIONS
+// protolint:enable FIELD_NAMES_LOWER_SNAKE_CASE
+
+// CostV2 is the per-call fee and the instrument it is denominated in.
+message CostV2 {
+  // fee is the decimal fee, string-encoded to preserve precision.
+  string fee = 1;
+  // instrument is the Token Standard instrument the fee is paid in.
+  InstrumentIdV2 instrument = 2;
+}
+
+// InstrumentIdV2 is a Token Standard instrument identifier (Splice.Api.Token.HoldingV1.InstrumentId).
+message InstrumentIdV2 {
+  // admin is the instrument administrator party id (the registry).
+  string admin = 1;
+  // id is the instrument symbol, e.g. "Amulet" for Canton Coin. MUST NOT contain ';'.
+  string id = 2;
+}
+
+// QuoteV2 is the strict typed quote payload (DataStandard.QuoteV1.Quote).
+// protolint:disable FIELD_NAMES_LOWER_SNAKE_CASE
+message QuoteV2 {
+  // feedId is the stable feed identifier; MUST equal the requested feedID and MUST NOT contain ';'.
+  string feedId = 1;
+  // price is the decimal price, string-encoded.
+  string price = 2;
+  // priceTime is when the producer observed the quote, as an ISO-8601 UTC timestamp with microsecond
+  // precision (e.g. "2026-07-04T13:41:50.852000Z"), injected as a DAML Time.
+  string priceTime = 3;
+}
+// protolint:enable FIELD_NAMES_LOWER_SNAKE_CASE
+
+// GetOraclePriceRequest asks the EVM pull oracle for a signed price of one instrument on one
+// blockchain.
+message GetOraclePriceRequest {
+  // Instrument identifier (Kaiko index code, e.g. "KK_RFR_AAPLUSD"), bound from the URL path.
+  string instrument_id = 1;
+  // Blockchain the price must be signed for (an EIP-712 signing domain, e.g. "zenith-testnet").
+  // Required; an unknown blockchain is rejected with NotFound.
+  string blockchain = 2;
+}
+
+// GetOraclePriceResponse is the Kaiko-signed price payload; the fields mirror the oraclesevm pull
+// oracle response and are the exact values covered by the signature.
+message GetOraclePriceResponse {
+  // Asset-class category of the instrument (e.g. "equity", "fx", "us_treasury"), the first field of
+  // the signed payload.
+  optional string asset_class = 1;
+  // Instrument identifier the price is for.
+  string instrument_id = 2;
+  // Price as a scaled integer. Always set — a no-price upstream tick is never emitted.
+  optional int64 price = 3;
+  // Number of decimal places the price is scaled by.
+  int32 decimal = 4;
+  // Upstream observation time in unix seconds (UTC).
+  int64 timestamp = 5;
+  // 65-byte secp256k1 signature (r||s||v), hex-encoded with a "0x" prefix.
+  string signature = 6;
+}
+
+// StreamOraclePriceRequest subscribes to a set of instruments signed for one blockchain. A client
+// needing several blockchains opens one stream per blockchain.
+message StreamOraclePriceRequest {
+  // Instrument identifiers (Kaiko index codes, e.g. "KK_RFR_AAPLUSD"), at least one.
+  repeated string instrument_ids = 1;
+  // Blockchain every price must be signed for (an EIP-712 signing domain, e.g. "zenith-testnet").
+  // Required; an unknown blockchain is rejected with NotFound.
+  string blockchain = 2;
 }
