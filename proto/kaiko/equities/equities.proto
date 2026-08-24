@@ -38,6 +38,12 @@ service EquitiesService {
   // StreamTopOfBook streams real-time top-of-book (best bid and ask) updates for an equities
   // exchange (e.g. Nasdaq), optionally filtered to a set of symbols.
   rpc StreamTopOfBook(StreamTopOfBookRequest) returns (stream TopOfBookResponse) {}
+  // GetUnderlyingData returns every raw micro-price the Capital Market Rates
+  // pipeline evaluated for one instrument, each tagged used or filtered by the
+  // outlier-detection gate — the equity analogue of the crypto All Trades
+  // endpoint, over synthetic micro-prices instead of executed trades.
+  // Requires the underlying-data access type on the API key.
+  rpc GetUnderlyingData(GetUnderlyingDataRequest) returns (GetUnderlyingDataResponse) {}
   // StreamCantonOracle streams signed oracle data and the associated Canton MasterOracle disclosure
   // for one or more non-crypto feeds (equities, FX, commodities). The disclosure is fetched once per
   // feed when the stream opens and reused; one payload is emitted per upstream tick, at receipt time.
@@ -82,6 +88,29 @@ message IndexResponse {
   Index index = 1;
   // Session detection method.
   IndexSessionDetector session_detector = 2;
+  // Normalized trading status of the freshest NBBO backing this index.
+  IndexTradingStatus trading_status = 3;
+}
+
+// IndexTradingStatus is the normalized trading status of the instrument
+// backing the index, mapped from the venue's raw trading status. UNKNOWN
+// means the venue never reported a status (or an unmapped one) — it is never
+// implied to be tradeable.
+enum IndexTradingStatus {
+  // No trading status available.
+  INDEX_TRADING_STATUS_UNKNOWN = 0;
+  // Continuous trading is open.
+  INDEX_TRADING_STATUS_READY_TO_TRADE = 1;
+  // Trading is halted.
+  INDEX_TRADING_STATUS_TRADING_HALT = 2;
+  // Scheduled auction phase.
+  INDEX_TRADING_STATUS_AUCTION = 3;
+  // Unscheduled intraday auction.
+  INDEX_TRADING_STATUS_UNSCHEDULED_INTRADAY_AUCTION = 4;
+  // Pre-open phase.
+  INDEX_TRADING_STATUS_PRE_OPEN = 5;
+  // Instrument is not available for trading.
+  INDEX_TRADING_STATUS_NOT_AVAILABLE_FOR_TRADING = 6;
 }
 
 // IndexSessionDetector represents the session detection method for index equities.
@@ -442,6 +471,8 @@ message FuturesRatesResponse {
   string sequence_id = 14;
   // Session detection method.
   IndexSessionDetector session_detector = 15;
+  // Normalized trading status of the freshest NBBO backing this rate.
+  IndexTradingStatus trading_status = 16;
 }
 
 // FuturesDetail holds details about a single future contract.
@@ -825,4 +856,97 @@ message CantonOraclePayload {
   string synchronizer_id = 3;
   // createdEventBlob contains the serialized contract event data.
   string created_event_blob = 4;
+}
+
+// GetUnderlyingDataRequest selects one instrument on one venue over a time
+// range. All other fields are optional; when page_token is set it carries the
+// full query state and the other fields are ignored.
+message GetUnderlyingDataRequest {
+  // Venue / market code, e.g. "xtks", "xcta", "boat".
+  // Optional when filtered=true: a filtered-only query may span all venues;
+  // each returned row carries its own exchange.
+  string exchange = 1;
+  // Base asset, e.g. "spy". Optional when filtered=true, like exchange.
+  string base_asset = 2;
+  // Start of the time range, inclusive.
+  google.protobuf.Timestamp start_time = 3;
+  // End of the time range, exclusive.
+  google.protobuf.Timestamp end_time = 4;
+  // When set, return only filtered (true) or only used (false) evaluations;
+  // unset returns both.
+  optional bool filtered = 5;
+  // Max rows per page; server caps at 5000. 0 means the server default.
+  uint32 page_size = 6;
+  // Continuation token from a previous response.
+  string page_token = 7;
+  // Sort by timestamp; default descending.
+  UnderlyingDataSort sort = 8;
+}
+
+// UnderlyingDataSort orders results by event time.
+enum UnderlyingDataSort {
+  // UNKNOWN (absent) sorts descending — newest first, the default.
+  UNDERLYING_DATA_SORT_UNKNOWN = 0;
+  // Newest first.
+  UNDERLYING_DATA_SORT_DESC = 1;
+  // Oldest first.
+  UNDERLYING_DATA_SORT_ASC = 2;
+}
+
+// GateMode says what a FILTERED verdict actually did: in OBSERVE the price was
+// still published (a would-have-been); only in ENFORCE was it suppressed.
+// Consumers must read filtered and mode together.
+enum GateMode {
+  // No gate mode available.
+  GATE_MODE_UNKNOWN = 0;
+  // The breach was recorded but the price was still published.
+  GATE_MODE_OBSERVE = 1;
+  // The price was withheld from publication.
+  GATE_MODE_ENFORCE = 2;
+}
+
+// UnderlyingPrice is one evaluation of the validity gate: one NBBO-derived
+// micro-price. Numeric values are decimal strings, matching the historical
+// endpoints. The book/verdict fields are populated only when filtered is true.
+message UnderlyingPrice {
+  // Event time of the evaluated micro-price.
+  google.protobuf.Timestamp timestamp = 1;
+  // Venue / market code the price was observed on.
+  string exchange = 2;
+  // Base asset of the instrument.
+  string base_asset = 3;
+  // Whether the gate flagged this price as an outlier.
+  bool filtered = 4;
+  // The micro-price that was (or would have been) published.
+  string price = 5;
+  // Synthetic liquidity weight: (bid_size + ask_size) / 2.
+  string amount = 6;
+
+  // Filtered-only: the mid of the book the price was computed from.
+  string mid = 7;
+  // Filtered-only: best bid price of the evaluated book.
+  string best_bid_price = 8;
+  // Filtered-only: best ask price of the evaluated book.
+  string best_ask_price = 9;
+  // Filtered-only: best bid size of the evaluated book.
+  string best_bid_size = 10;
+  // Filtered-only: best ask size of the evaluated book.
+  string best_ask_size = 11;
+  // Filtered-only: what the firing rule measured, in that rule's own units.
+  string deviation = 12;
+  // Filtered-only: the bar in force for the firing rule, same units.
+  string threshold = 13;
+  // Filtered-only: which rule fired (and therefore which units apply).
+  string reason = 14;
+  // Filtered-only: whether the verdict observed or enforced.
+  GateMode mode = 15;
+}
+
+// GetUnderlyingDataResponse is one page; an empty next_page_token means the
+// last page.
+message GetUnderlyingDataResponse {
+  // One page of evaluated micro-prices.
+  repeated UnderlyingPrice data = 1;
+  // Continuation token for the next page; empty on the last page.
+  string next_page_token = 2;
 }
