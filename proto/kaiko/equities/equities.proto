@@ -48,6 +48,12 @@ service EquitiesService {
   // for one or more non-crypto feeds (equities, FX, commodities). The disclosure is fetched once per
   // feed when the stream opens and reused; one payload is emitted per upstream tick, at receipt time.
   rpc StreamCantonOracle(StreamCantonOracleRequest) returns (stream CantonOracleResponse) {}
+  // GetComputeIndex returns compute (GPU) power-index datapoints for one index code.
+  // With no time range it returns the latest datapoint (point-in-time); with a
+  // range it returns the datapoints in [start_time, end_time].
+  rpc GetComputeIndex(GetComputeIndexRequest) returns (GetComputeIndexResponse) {}
+  // StreamComputeIndex streams real-time compute (GPU) power-index datapoints, filtered by index code.
+  rpc StreamComputeIndex(StreamComputeIndexRequest) returns (stream ComputeIndexDatapoint) {}
 }
 
 // IndexCommodity allows selecting kind of index update wanted.
@@ -856,6 +862,95 @@ message CantonOraclePayload {
   string synchronizer_id = 3;
   // createdEventBlob contains the serialized contract event data.
   string created_event_blob = 4;
+}
+
+// GetComputeIndexRequest selects one compute-index series by index code,
+// optionally bounded to a time range (omit both for the latest datapoint).
+message GetComputeIndexRequest {
+  // Index code, e.g. "KK_CMP_H100_ST".
+  string index_code = 1;
+  // Start of the range (inclusive); omit with end_time for the latest datapoint.
+  google.protobuf.Timestamp start_time = 2;
+  // End of the range (inclusive).
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// GetComputeIndexResponse is the datapoints matching the request.
+message GetComputeIndexResponse {
+  // Matching datapoints, most-recent first.
+  repeated ComputeIndexDatapoint datapoints = 1;
+}
+
+// StreamComputeIndexRequest filters the live compute-index stream by index code.
+message StreamComputeIndexRequest {
+  // Index codes to filter by, e.g. ["KK_CMP_H100_ST"]. Empty means all permitted.
+  repeated string index_codes = 1;
+}
+
+// ComputeIndexDatapoint is one compute (GPU) power-index value, aligned to the
+// Kaiko crypto single-asset rate shape.
+message ComputeIndexDatapoint {
+  // Index code, e.g. "KK_CMP_H100_ST".
+  string index_code = 1;
+  // Publication type, e.g. "SIC_REAL_TIME".
+  string commodity = 2;
+  // Calculation window [start_time, end_time].
+  ComputeIndexDataInterval interval = 3;
+  // Quote currency (always "usd" for compute indices).
+  string quote = 4;
+  // Base assets (single-asset: one entry, weight 1).
+  repeated ComputeIndexBaseAsset bases = 5;
+  // Source exchange code(s), e.g. ["sqrt"].
+  repeated string exchanges = 6;
+  // The index value.
+  double price = 7;
+  // Methodology identifier.
+  string methodology = 8;
+  // Per-partition breakdown, most-recent first.
+  repeated ComputeIndexDetail details = 9;
+  // Forward-fill (fallback) marker.
+  ComputeIndexFallbackInfo fallback_info = 10;
+  // Interval end / publication time.
+  google.protobuf.Timestamp ts_event = 11;
+  // Sequence ID (may be empty).
+  string sequence_id = 12;
+  // Data-freshness marker (max collected_at in the window).
+  google.protobuf.Timestamp last_ingest_time = 13;
+}
+
+// ComputeIndexDataInterval is a calculation window [start_time, end_time].
+message ComputeIndexDataInterval {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+}
+
+// ComputeIndexBaseAsset is a base asset in the computation (single-asset, weight 1).
+message ComputeIndexBaseAsset {
+  string asset = 1;
+  double weight = 2;
+}
+
+// ComputeIndexDetail is one partition's contribution to the value.
+message ComputeIndexDetail {
+  uint32 partition = 1;
+  double price = 2;
+  double volume = 3;
+  uint32 count = 4;
+  ComputeIndexUnderlyingTrade underlying_trade = 5;
+}
+
+// ComputeIndexUnderlyingTrade is the provenance of the underlying tick a
+// partition's volume-weighted median resolves to (datetime deferred).
+message ComputeIndexUnderlyingTrade {
+  string exchange = 1;  // underlying data provider (provider_id)
+  double volume = 2;    // the tick's volume (amount/weight)
+  string id = 3;        // the tick's synthetic id
+  google.protobuf.Timestamp datetime = 4;  // the tick's observed_at (event time)
+}
+
+// ComputeIndexFallbackInfo describes whether the value was forward-filled.
+message ComputeIndexFallbackInfo {
+  bool fallback_used = 1;
 }
 
 // GetUnderlyingDataRequest selects one instrument on one venue over a time
