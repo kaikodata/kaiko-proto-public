@@ -48,6 +48,12 @@ service EquitiesService {
   // for one or more non-crypto feeds (equities, FX, commodities). The disclosure is fetched once per
   // feed when the stream opens and reused; one payload is emitted per upstream tick, at receipt time.
   rpc StreamCantonOracle(StreamCantonOracleRequest) returns (stream CantonOracleResponse) {}
+  // GetComputeIndex returns compute (GPU) power-index datapoints for one index code.
+  // With no time range it returns the latest datapoint (point-in-time); with a
+  // range it returns the datapoints in [start_time, end_time].
+  rpc GetComputeIndex(GetComputeIndexRequest) returns (GetComputeIndexResponse) {}
+  // StreamComputeIndex streams real-time compute (GPU) power-index datapoints, filtered by index code.
+  rpc StreamComputeIndex(StreamComputeIndexRequest) returns (stream ComputeIndexDatapoint) {}
 }
 
 // IndexCommodity allows selecting kind of index update wanted.
@@ -856,6 +862,157 @@ message CantonOraclePayload {
   string synchronizer_id = 3;
   // createdEventBlob contains the serialized contract event data.
   string created_event_blob = 4;
+}
+
+// GetComputeIndexRequest selects one compute-index series by index code,
+// optionally bounded to a time range (omit both for the latest datapoint).
+message GetComputeIndexRequest {
+  // Index code, e.g. "KK_CMP_H100_ST".
+  string index_code = 1;
+  // Start of the range (inclusive); omit with end_time for the latest datapoint.
+  google.protobuf.Timestamp start_time = 2;
+  // End of the range (inclusive).
+  google.protobuf.Timestamp end_time = 3;
+  // Max datapoints per page; server caps at 1000. 0 means the server
+  // default (100). A page_size above the maximum is rejected rather than
+  // clamped, so a caller can always tell one full page from everything
+  // there was.
+  uint32 page_size = 4;
+  // Continuation token from a previous response. When set it carries
+  // the window, page size and sort order, so those fields are ignored.
+  // index_code stays REQUIRED and must match the code the token was
+  // issued for: it is the key access is granted on, and a mismatch is
+  // rejected.
+  string page_token = 5;
+  // Sort order for a range query. Ignored for a point-in-time read,
+  // which always returns the single latest datapoint, and on a
+  // continuation, which takes its order from the token.
+  ComputeIndexSort sort = 6;
+}
+
+// ComputeIndexSort orders a ranged GetComputeIndex.
+enum ComputeIndexSort {
+  // UNKNOWN (absent) sorts descending — newest first, the default.
+  COMPUTE_INDEX_SORT_UNKNOWN = 0;
+  // Newest datapoint first.
+  COMPUTE_INDEX_SORT_DESC = 1;
+  // Oldest datapoint first.
+  COMPUTE_INDEX_SORT_ASC = 2;
+}
+
+// GetComputeIndexResponse is the datapoints matching the request.
+message GetComputeIndexResponse {
+  // One page of matching datapoints, in the requested sort order
+  // (newest first by default).
+  repeated ComputeIndexDatapoint datapoints = 1;
+  // Continuation token; empty means this is the last page. Pass it back
+  // as page_token to fetch the next page.
+  string next_page_token = 2;
+}
+
+// StreamComputeIndexRequest filters the live compute-index stream by index code.
+message StreamComputeIndexRequest {
+  // Index codes to filter by, e.g. ["KK_CMP_H100_ST"]. Empty means all permitted.
+  repeated string index_codes = 1;
+}
+
+// ComputeIndexDatapoint is one compute (GPU) power-index value, aligned to the
+// Kaiko crypto single-asset rate shape. One message is published per computation
+// and is one of three kinds:
+//   - real:     a freshly computed value — fallback_used=false, price and
+//               last_ingest_time set, interval up to date.
+//   - fallback: computation stalled and the series has use_fallback enabled, so
+//               the last good value is republished — fallback_used=true,
+//               last_ingest_time frozen.
+//   - sentinel: computation stalled and use_fallback is off — no value this
+//               window — fallback_used=false, price and last_ingest_time unset;
+//               the stale interval is the signal that it is not a fresh value.
+message ComputeIndexDatapoint {
+  // Index code, e.g. "KK_CMP_H100_ST".
+  string index_code = 1;
+  // Publication type, e.g. "SIC_REAL_TIME".
+  string commodity = 2;
+  // Calculation window [start_time, end_time].
+  ComputeIndexDataInterval interval = 3;
+  // Quote currency (always "usd" for compute indices).
+  string quote = 4;
+  // Base assets (single-asset: one entry, weight 1).
+  repeated ComputeIndexBaseAsset bases = 5;
+  // Source exchange code(s), e.g. ["sqrt"].
+  repeated string exchanges = 6;
+  // The index value. optional: omitted on a sentinel (no fresh value this
+  // window); present on real datapoints and fallbacks.
+  optional double price = 7;
+  // Methodology identifier.
+  string methodology = 8;
+  // Per-partition breakdown, most-recent first. Empty on a fallback or sentinel.
+  repeated ComputeIndexDetail details = 9;
+  // Fallback marker — see ComputeIndexFallbackInfo.
+  ComputeIndexFallbackInfo fallback_info = 10;
+  // Interval end / publication time.
+  google.protobuf.Timestamp ts_event = 11;
+  // Sequence ID (may be empty).
+  string sequence_id = 12;
+  // Data-freshness marker (max collected_at in the window). Frozen on a
+  // fallback; unset on a sentinel.
+  google.protobuf.Timestamp last_ingest_time = 13;
+}
+
+// ComputeIndexDataInterval is a calculation window [start_time, end_time].
+message ComputeIndexDataInterval {
+  // Start of the interval this datapoint covers (inclusive).
+  google.protobuf.Timestamp start_time = 1;
+  // End of the interval; also the datapoint's timestamp.
+  google.protobuf.Timestamp end_time = 2;
+}
+
+// ComputeIndexBaseAsset is a base asset in the computation (single-asset, weight 1).
+message ComputeIndexBaseAsset {
+  // Base asset, e.g. "h100_st".
+  string asset = 1;
+  // The asset's weight in the basket; 1 for a single-asset index.
+  double weight = 2;
+}
+
+// ComputeIndexDetail is one partition's contribution to the value.
+message ComputeIndexDetail {
+  // Partition index within the window (0 = oldest).
+  uint32 partition = 1;
+  // The partition's volume-weighted median price.
+  double price = 2;
+  // Summed volume across the partition.
+  double volume = 3;
+  // Number of observations in the partition.
+  uint32 count = 4;
+  // Provenance of the median observation this partition resolved to.
+  ComputeIndexUnderlyingTrade underlying_trade = 5;
+}
+
+// ComputeIndexUnderlyingTrade is the provenance of the underlying tick a
+// partition's volume-weighted median resolves to (datetime deferred).
+message ComputeIndexUnderlyingTrade {
+  // Underlying data provider (provider_id).
+  string exchange = 1;
+  // The tick's volume (amount/weight).
+  double volume = 2;
+  // The tick's synthetic id.
+  string id = 3;
+  // The tick's observed_at (event time).
+  google.protobuf.Timestamp datetime = 4;
+}
+
+// ComputeIndexFallbackInfo marks whether a datapoint is a republished last-good
+// value (a fallback).
+message ComputeIndexFallbackInfo {
+  // true only when computation stalled and the series has use_fallback enabled:
+  // the last good value is republished. false for a healthy real datapoint AND
+  // for a sentinel (stalled with use_fallback off) — a sentinel is told apart
+  // from a real datapoint by its unset price and stale last_ingest_time /
+  // interval.
+  bool fallback_used = 1;
+  // fallback_timestamp is the ts_event of the last-good datapoint whose value is
+  // being carried forward. Set only when fallback_used is true.
+  google.protobuf.Timestamp fallback_timestamp = 2;
 }
 
 // GetUnderlyingDataRequest selects one instrument on one venue over a time
