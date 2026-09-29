@@ -14,6 +14,8 @@ Real-time and historical streaming access to index equities data.
 - `MarketCalendarV2` - Market calendar data grouped by timezone for a date range
 - `StreamTopOfBook` - Real-time stream of two-sided top-of-book (best bid and ask) updates for an equities exchange
 - `StreamCantonOracle` - Real-time stream of signed oracle data with the Canton MasterOracle disclosure
+- `StreamContinuousRate` - Real-time stream of 24/7 continuous capital market rates
+- `ReplayContinuousRate` - Historical replay of continuous capital market rates within a time range
 
 ## Generating Client Code
 

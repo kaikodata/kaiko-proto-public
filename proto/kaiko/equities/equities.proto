@@ -48,6 +48,11 @@ service EquitiesService {
   // for one or more non-crypto feeds (equities, FX, commodities). The disclosure is fetched once per
   // feed when the stream opens and reused; one payload is emitted per upstream tick, at receipt time.
   rpc StreamCantonOracle(StreamCantonOracleRequest) returns (stream CantonOracleResponse) {}
+  // StreamContinuousRate streams real-time 24/7 continuous capital market rates,
+  // filtered by index code.
+  rpc StreamContinuousRate(StreamContinuousRateRequest) returns (stream ContinuousRateResponse) {}
+  // ReplayContinuousRate replays historical continuous capital market rates within a time range.
+  rpc ReplayContinuousRate(ReplayContinuousRateRequest) returns (stream ContinuousRateResponse) {}
   // GetComputeIndex returns compute (GPU) power-index datapoints for one index code.
   // With no time range it returns the latest datapoint (point-in-time); with a
   // range it returns the datapoints in [start_time, end_time].
@@ -1106,4 +1111,155 @@ message GetUnderlyingDataResponse {
   repeated UnderlyingPrice data = 1;
   // Continuation token for the next page; empty on the last page.
   string next_page_token = 2;
+}
+
+// StreamContinuousRateRequest is the request for streaming continuous capital market rates.
+message StreamContinuousRateRequest {
+  // Index codes to filter by (e.g., ["KK_CMR_TSLAUSD"]).
+  repeated string index_codes = 1;
+}
+
+// ReplayContinuousRateRequest is the request for replaying historical continuous capital
+// market rates.
+message ReplayContinuousRateRequest {
+  // Index codes to filter by (e.g., ["KK_CMR_TSLAUSD"]).
+  repeated string index_codes = 1;
+  // Start time for the replay (inclusive). Will be bounded to max replay interval from now.
+  google.protobuf.Timestamp start_time = 2;
+  // End time for the replay (exclusive). Will be bounded to current time.
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// ContinuousRateSource is the kind of source a published continuous rate comes from.
+enum ContinuousRateSource {
+  // Unknown source.
+  CONTINUOUS_RATE_SOURCE_UNKNOWN = 0;
+  // Spot market rate.
+  SPOT = 1;
+  // Implied rate from the futures market.
+  FUTURES_IMPLIED = 2;
+  // Perps-derived rate.
+  PERPS = 3;
+}
+
+// ContinuousRateSessionState is the calculation status of a published continuous rate.
+enum ContinuousRateSessionState {
+  // Unknown state.
+  CONTINUOUS_RATE_SESSION_STATE_UNKNOWN = 0;
+  // The rate is passed through from a non-perps source.
+  LIVE = 1;
+  // A downgrade to a lower-priority source is being EMA-smoothed.
+  TRANSITION = 2;
+  // The rate settled on the perps source.
+  ILLIQUID = 3;
+}
+
+// ContinuousRateResponse is one published tick of a 24/7 continuous capital market rate,
+// from the highest-priority available source among spot / futures-implied / perps.
+message ContinuousRateResponse {
+  // Index code of the published rate (e.g. "KK_CMR_TSLAUSD").
+  string index_code = 1;
+  // Base asset and weight, from the index configuration (one asset, weight 1).
+  repeated IndexBaseAsset bases = 2;
+  // Quote currency of the rate, from the index configuration.
+  string quote = 3;
+  // Published rate; while a downgrade transition is smoothed it equals A + EMA(diff, tau).
+  // Absent when every source has been silent past the stale fallback window: the tick
+  // publishes the feed's state without a rate.
+  optional double price = 4;
+  // Source of the published rate.
+  ContinuousRateSource rate_source = 5;
+  // Current market session of the underlying assets (the priority-1 session detector).
+  IndexSessionDetector asset_session_detector = 6;
+  // Calculation status of this tick.
+  ContinuousRateSessionState session_state = 7;
+  // Spot rate block; empty when spot is neither published nor the transition anchor.
+  ContinuousRateEquitySource spot_rate = 8;
+  // Futures-implied rate block; empty when it is neither published nor the transition anchor.
+  ContinuousRateFuturesSource futures_rate = 9;
+  // Perps rate block; empty when perps is neither published nor the transition anchor.
+  ContinuousRateEquitySource perps_rate = 10;
+  // EMA smoothing block; present iff a downgrade transition is being smoothed on this tick.
+  ContinuousRateEMASmoothing ema_smoothing = 11;
+  // Instant the tick was calculated on: a multiple of the publication interval since the
+  // Unix epoch. The data behind the rate is older, each block's timestamp carrying the end
+  // of the upstream window it came from.
+  google.protobuf.Timestamp end_time = 14;
+  // Time the message was produced.
+  google.protobuf.Timestamp ts_event = 12;
+  // Tick sequence identifier. Sortable in lexicographic order.
+  string sequence_id = 13;
+}
+
+// ContinuousRateEquitySource is the spot or perps per-source block: what its upstream
+// last published, however old. Empty when the source is not part of the current tick.
+message ContinuousRateEquitySource {
+  // Last received rate; absent when the upstream never carried one.
+  optional double price = 1;
+  // End time of the upstream computation interval.
+  google.protobuf.Timestamp timestamp = 2;
+  // Market session of the underlying price feed.
+  IndexSessionDetector session_detector = 3;
+  // Contributing venue codes.
+  repeated string exchanges = 4;
+  // Per-pair breakdown, as the upstream stream carries it.
+  repeated IndexPairs details = 5;
+  // Underlying and FX legs, when the rate is read from the forex converted stream.
+  ForexRatesComposition forex_composition = 6;
+}
+
+// ContinuousRateFuturesSource is the futures-implied per-source block: what its upstream
+// last published, however old. Empty when the source is not part of the current tick.
+message ContinuousRateFuturesSource {
+  // Last received rate; absent when the upstream never carried one.
+  optional double price = 1;
+  // End time of the upstream computation interval.
+  google.protobuf.Timestamp timestamp = 2;
+  // Market session of the underlying price feed.
+  IndexSessionDetector session_detector = 3;
+  // Contributing venue codes.
+  repeated string exchanges = 4;
+  // Underlying futures breakdown, as the upstream stream carries it.
+  repeated ContinuousRateFuturesUnderlying details = 5;
+  // Underlying and FX legs, when the rate is read from the forex converted stream.
+  ForexRatesComposition forex_composition = 6;
+}
+
+// ContinuousRateFuturesUnderlying is one entry of the futures breakdown behind an
+// implied rate: the future instrument pair and the spot leg used for quote conversion.
+message ContinuousRateFuturesUnderlying {
+  // Future instrument details.
+  ContinuousRateFuturesInstrument future = 1;
+  // Spot leg used for quote conversion.
+  FuturesSpotRate spot = 2;
+}
+
+// ContinuousRateFuturesInstrument is the blended future instrument pair behind an
+// implied rate.
+message ContinuousRateFuturesInstrument {
+  // Symbol pair of the future, e.g. "kr200h.xkef/kr200u.xkef".
+  string pair = 1;
+  // Blended price of the pair.
+  double price = 2;
+  // Front future details.
+  FuturesDetail front_future = 3;
+  // Back future details.
+  FuturesDetail back_future = 4;
+}
+
+// ContinuousRateEMASmoothing is the emaSmoothing block of one smoothed tick, the very
+// EMA update that produced the published price: price = A + emaCurrent, diff = B - A.
+message ContinuousRateEMASmoothing {
+  // Current EMA of diff.
+  optional double ema_current = 1;
+  // Active EMA time constant tau, in seconds.
+  int32 ema_time_constant = 2;
+  // diff = B - A. The JSON key keeps the spec's capital D.
+  optional double difference = 3 [json_name = "Difference"];
+  // Smoothing weight: alpha = 1 - exp(-delta_t / tau).
+  optional double alpha = 4;
+  // EMA value at the previous tick.
+  optional double ema_prev = 5;
+  // Source the smoothing is anchored on: the one the feed is leaving.
+  ContinuousRateSource anchor_source = 6;
 }
