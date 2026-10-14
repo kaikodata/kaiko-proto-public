@@ -1,0 +1,21 @@
+# Mirrors kaiko-sdk's configuration so the two proto repos are linted the same
+# way. Notably: max_line_length 180 rather than protolint's default 80, and
+# zero-value enum fields end with UNKNOWN rather than UNSPECIFIED — both of
+# which match the conventions already used across these definitions.
+lint:
+  directories:
+    exclude:
+      - third_party
+      - .go
+      - node_modules
+      - clients
+  rules:
+    all_default: true
+    remove:
+      - ENUM_FIELD_NAMES_PREFIX
+      - FILE_HAS_COMMENT
+  rules_option:
+    enum_field_names_zero_value_end_with:
+      suffix: UNKNOWN
+    max_line_length:
+      max_chars: 180

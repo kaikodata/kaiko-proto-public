@@ -1,0 +1,37 @@
+---
+# Mirrors kaiko-sdk's protolint job: install a pinned protolint, run it over the
+# whole repo, fail the build on any finding. Configuration lives in
+# .protolint.yaml.
+name: lint
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  protolint:
+    # ubuntu-latest rather than kaiko-sdk's self-hosted: this repo has no
+    # workflow history, so no self-hosted runner is known to serve it, and a
+    # wrong runner label queues forever instead of failing. protolint needs
+    # nothing but Go.
+    runs-on: ubuntu-latest
+    concurrency:
+      cancel-in-progress: true
+      group: ${{ github.workflow }}-protolint-${{ github.event.pull_request.number || github.ref }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: false
+      - name: protolint
+        run: >
+          go install github.com/yoheimuta/protolint/cmd/protolint@v$PROTOLINT_VERSION &&
+          protolint lint .
+        env:
+          # Matches kaikodata/pkg rather than kaiko-sdk's older 0.50.5: these
+          # definitions mirror pkg's, so linting both with the same version
+          # keeps the two from disagreeing about the same file.
+          PROTOLINT_VERSION: 0.56.4
