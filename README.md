@@ -12,6 +12,7 @@ Real-time and historical streaming access to index equities data.
 - `ReplayIndex` - Historical replay of index data within a time range
 - `CorporateActions` - Unary call to retrieve corporate actions
 - `MarketCalendarV2` - Market calendar data grouped by timezone for a date range
+- `ReferenceData` - Catalogue of the published rates, with their stream endpoint and publication frequency
 - `StreamTopOfBook` - Real-time stream of two-sided top-of-book (best bid and ask) updates for an equities exchange
 - `StreamCantonOracle` - Real-time stream of signed oracle data with the Canton MasterOracle disclosure
 - `StreamContinuousRate` - Real-time stream of 24/7 continuous capital market rates
