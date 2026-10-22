@@ -558,7 +558,7 @@ message ReferenceDataRequest {
   repeated string timezones = 6; // protolint:disable:this REPEATED_FIELD_NAMES_PLURALIZED
   // Filter by exposition (e.g. ["public", "private"]).
   repeated string exposition = 7; // protolint:disable:this REPEATED_FIELD_NAMES_PLURALIZED
-  // Filter by stream endpoint (e.g. ["StreamIndex", "StreamFuturesRates", "StreamForexRates"]).
+  // Filter by stream endpoint (e.g. ["StreamIndex", "StreamFuturesRates", "StreamForexRates", "StreamContinuousRate"]).
   repeated string stream_endpoints = 8; // protolint:disable:this REPEATED_FIELD_NAMES_PLURALIZED
 }
 
@@ -593,12 +593,14 @@ message ReferenceDataEntry {
   string launch_date = 10;
   // Exposition level (e.g. "public", "private").
   string exposition = 11;
-  // Stream endpoint method name (e.g. "StreamIndex", "StreamFuturesRates", "StreamForexRates").
+  // Stream endpoint method name (e.g. "StreamIndex", "StreamFuturesRates", "StreamForexRates", "StreamContinuousRate").
   string stream_endpoint = 12;
   // Methodology version (e.g. "3.3.2").
   string methodology = 13;
   // Asset calendar or asset class used for market session detection.
   string asset_calendar = 14;
+  // How often the rate publishes (e.g. "500ms", "1s", "1d"); empty when unknown.
+  string publication_frequency = 15;
 }
 
 // ReferenceBaseAsset holds base asset reference data.
